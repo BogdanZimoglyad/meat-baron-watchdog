@@ -12,6 +12,7 @@ name: Сторож
 on:
   schedule:
     - cron: '*/10 4-19 * * *'      # за UTC; години Києва відсіює крок нижче
+    - cron: '0 6 1 * *'            # 1-го числа о 9:00 за Києвом — лише keepalive нижче
   workflow_dispatch:
     inputs:
       test:
@@ -22,6 +23,7 @@ on:
 jobs:
   check:
     name: Сайт і API живі
+    if: github.event_name != 'schedule' || github.event.schedule != '0 6 1 * *'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -69,3 +71,21 @@ jobs:
 
           Перевіряю кожні 10 хв, поки не підніметься. Що дивитись: Railway → Deployments і Logs."
           exit 1
+
+  # GitHub вимикає розклад у відкритому репозиторії, де 60 днів не було
+  # змін, — і сторож замовк би без жодного попередження (знайдено 06.10).
+  # Раз на місяць робимо порожній коміт: це й є «зміна».
+  keepalive:
+    name: Не дати GitHub вимкнути розклад
+    if: github.event_name == 'schedule' && github.event.schedule == '0 6 1 * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          git config user.name "watchdog-keepalive"
+          git config user.email "watchdog-keepalive@users.noreply.github.com"
+          git commit --allow-empty -m "keepalive: сторож живий $(date -u +%F)"
+          git push
