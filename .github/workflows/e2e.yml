@@ -1,0 +1,105 @@
+# Перевірка в бою (11.10): справжній сайт → вхід через Telegram акаунтом
+# «Барон Тест» → замовлення на приховану «Тестову точку» → кнопки в групі
+# «Барон Тест-точка» → сповіщення клієнту. Сценарій — e2e/run.js.
+#
+# Коли:
+# - щодня о 7:30 за Києвом — до відкриття точок;
+# - з 8:00 до 20:00 раз на 15 хв дивимось, чи не вийшла нова версія
+#   (build у /api/health), і якщо вийшла — перевіряємо її один раз;
+# - руками: Actions → «Перевірка в бою» → Run workflow.
+# Упало — власнику в особисті «❌ … на кроці X». Операторам — нічого.
+#
+# Секрети: TG_API_ID, TG_API_HASH, TG_SESSION (npm run login), BOT_TOKEN, OWNER_ID.
+name: Перевірка в бою
+
+on:
+  schedule:
+    - cron: '30 4,5 * * *'         # 7:30 Києва і влітку (UTC+3), і взимку (UTC+2) — зайве відсіє крок нижче
+    - cron: '*/15 5-17 * * *'      # нова версія? (години Києва відсіює крок нижче)
+  workflow_dispatch:
+    inputs:
+      notify_ok:
+        description: 'Написати власнику й тоді, коли все пройшло'
+        type: boolean
+        default: true
+
+concurrency:
+  group: e2e
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    name: Сайт → бот → кнопки → сповіщення
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Чи перевіряти зараз
+        id: gate
+        env:
+          EVENT: ${{ github.event_name }}
+          SCHED: ${{ github.event.schedule }}
+        run: |
+          build=$(curl -fsS --max-time 20 https://api.meat-baron.kh.ua/api/health | sed -n 's/.*"build":"\([^"]*\)".*/\1/p')
+          h=$(TZ=Europe/Kyiv date +%-H)
+          mode=skip
+          if [ "$EVENT" != "schedule" ]; then mode=run
+          elif [ "$SCHED" = "30 4,5 * * *" ]; then [ "$h" = "7" ] && mode=run
+          elif [ "$h" -ge 8 ] && [ "$h" -lt 21 ] && [ -n "$build" ]; then mode=build
+          fi
+          echo "build=${build:-unknown}" >> "$GITHUB_OUTPUT"
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "Київ $h год, версія ${build:-?}, режим $mode"
+
+      # Нову версію перевіряємо один раз: позначка — кеш із номером версії
+      - name: Цю версію вже перевіряли?
+        id: seen
+        if: steps.gate.outputs.mode == 'build'
+        uses: actions/cache/restore@v4
+        with:
+          path: .e2e-seen
+          key: e2e-build-${{ steps.gate.outputs.build }}
+          lookup-only: true
+
+      - name: Вирішили
+        id: go
+        run: |
+          if [ "${{ steps.gate.outputs.mode }}" = "run" ] || { [ "${{ steps.gate.outputs.mode }}" = "build" ] && [ "${{ steps.seen.outputs.cache-hit }}" != "true" ]; }; then
+            echo "run=yes" >> "$GITHUB_OUTPUT"; echo "Перевіряємо"
+          else echo "run=no" >> "$GITHUB_OUTPUT"; echo "Нічого нового — пропускаємо"; fi
+
+      - uses: actions/checkout@v4
+        if: steps.go.outputs.run == 'yes'
+      - uses: actions/setup-node@v4
+        if: steps.go.outputs.run == 'yes'
+        with:
+          node-version: 20
+          cache: npm
+      - name: Залежності й браузер
+        if: steps.go.outputs.run == 'yes'
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Перевірка
+        if: steps.go.outputs.run == 'yes'
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+          TG_SESSION: ${{ secrets.TG_SESSION }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          OWNER_ID: ${{ secrets.OWNER_ID }}
+          NOTIFY_OK: ${{ inputs.notify_ok }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node e2e/run.js
+
+      # Позначаємо версію перевіреною навіть після падіння: інакше власник
+      # отримував би «❌» кожні 15 хвилин, доки не виправимо
+      - name: Позначити версію
+        if: always() && steps.go.outputs.run == 'yes' && steps.gate.outputs.build != 'unknown'
+        run: echo "${{ steps.gate.outputs.build }}" > .e2e-seen
+      - uses: actions/cache/save@v4
+        if: always() && steps.go.outputs.run == 'yes' && steps.gate.outputs.build != 'unknown'
+        continue-on-error: true
+        with:
+          path: .e2e-seen
+          key: e2e-build-${{ steps.gate.outputs.build }}

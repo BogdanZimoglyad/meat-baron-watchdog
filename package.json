@@ -1,0 +1,13 @@
+{
+  "name": "meat-baron-watchdog",
+  "private": true,
+  "description": "Сторож і щоденна перевірка в бою (e2e) для meat-baron.kh.ua",
+  "scripts": {
+    "login": "node e2e/login.js",
+    "e2e": "node e2e/run.js"
+  },
+  "dependencies": {
+    "playwright": "^1.64.0",
+    "telegram": "^2.26.22"
+  }
+}
