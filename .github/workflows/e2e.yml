@@ -4,8 +4,11 @@
 #
 # Коли:
 # - щодня о 7:30 за Києвом — до відкриття точок;
-# - з 8:00 до 20:00 раз на 15 хв дивимось, чи не вийшла нова версія
-#   (build у /api/health), і якщо вийшла — перевіряємо її один раз;
+# - після кожної нової версії: сервер сам запускає цю перевірку через
+#   4 хв після старту (змінна GH_DISPATCH_TOKEN на Railway, 12.10) — з
+#   полем build, тож перезапуск тієї ж версії вдруге не перевіряє;
+# - запасний шлях: з 8:00 до 20:00 раз на 15 хв дивимось, чи не вийшла
+#   нова версія. Розклад GitHub спрацьовує рідко, тому лише запасний;
 # - руками: Actions → «Перевірка в бою» → Run workflow.
 # Упало — власнику в особисті «❌ … на кроці X». Операторам — нічого.
 #
@@ -22,6 +25,10 @@ on:
         description: 'Написати власнику й тоді, коли все пройшло'
         type: boolean
         default: true
+      build:
+        description: 'Версія сервера (заповнює сам сервер після старту; руками — лишити порожнім)'
+        type: string
+        default: ''
 
 concurrency:
   group: e2e
@@ -38,11 +45,13 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           SCHED: ${{ github.event.schedule }}
+          FROM_SERVER: ${{ inputs.build }}
         run: |
           build=$(curl -fsS --max-time 20 https://api.meat-baron.kh.ua/api/health | sed -n 's/.*"build":"\([^"]*\)".*/\1/p')
           h=$(TZ=Europe/Kyiv date +%-H)
           mode=skip
-          if [ "$EVENT" != "schedule" ]; then mode=run
+          if [ -n "$FROM_SERVER" ] && [ -n "$build" ]; then mode=build      # нова версія — один раз на версію
+          elif [ "$EVENT" != "schedule" ]; then mode=run
           elif [ "$SCHED" = "30 4,5 * * *" ]; then [ "$h" = "7" ] && mode=run
           elif [ "$h" -ge 8 ] && [ "$h" -lt 21 ] && [ -n "$build" ]; then mode=build
           fi
