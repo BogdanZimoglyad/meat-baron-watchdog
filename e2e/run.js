@@ -117,7 +117,9 @@ const statusIs = (no, st, ms = 15000) =>
       }
       if (guest || !(await p.locator('#nm').inputValue())) await p.locator('#nm').fill(guest ? 'Гість Перевірка' : 'Барон Тест');
       if (guest) await p.locator('#tel').fill(GUEST_TEL);
-      if (!(await p.locator('#sheet').innerText()).includes('Тестова точка')) throw new Error('у формі не «Тестова точка» — зупинились, щоб не замовити на справжню');
+      /* Доставка не показує «Точку видачі» — питаємо саму сторінку, куди піде замовлення */
+      const where = await p.evaluate(() => SHOPS[shop][0]).catch(() => '');
+      if (where !== 'Тестова точка') throw new Error(`замовлення пішло б на «${where}», а не на тестову — зупинились, щоб не замовити на справжню`);
       await p.locator('#send').click();
       await p.locator('#sheet').filter({ hasText: /ЗАМОВЛЕННЯ ОФОРМЛЕНО/i }).waitFor({ timeout: 20000 });
       const n = Number(((await p.locator('#sheet').innerText()).match(/№\s*(\d+)/) || [])[1]);
