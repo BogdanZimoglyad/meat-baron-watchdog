@@ -115,6 +115,11 @@ const statusIs = (no, st, ms = 15000) =>
         await p.locator('#addrStreet').fill('вул. Перевірочна');
         await p.locator('#addrHouse').fill('1');
       }
+      /* Кошик одним екраном (15.10): імʼя й номер — у згорнутому кроці «Контакти».
+         На старому сайті такого кроку немає — поля видно одразу */
+      const who = p.locator('#sheet [data-step="who"]');
+      if (await who.count() && (await who.getAttribute('aria-expanded')) !== 'true') await who.click();
+      await p.locator('#nm').waitFor({ timeout: 10000 });
       if (guest || !(await p.locator('#nm').inputValue())) await p.locator('#nm').fill(guest ? 'Гість Перевірка' : 'Барон Тест');
       if (guest) await p.locator('#tel').fill(GUEST_TEL);
       /* Доставка не показує «Точку видачі» — питаємо саму сторінку, куди піде замовлення */
