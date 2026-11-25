@@ -97,7 +97,9 @@ const statusIs = (no, st, ms = 15000) =>
     const jsErrors = [];
     page.on('pageerror', e => jsErrors.push('сайт: ' + e.message));
     await page.goto(SITE + '/?e2e=1&cb=' + Date.now(), { waitUntil: 'networkidle' });
-    await page.locator('.add').first().waitFor({ timeout: 20000 });
+    /* Сайт ожив: на телефоні з 25.11 головна — плитки розділів (.cg-t), кнопок
+       «+ Додати» там немає; на старому сайті й на компʼютері — картки (.add) */
+    await page.locator('.cg-t, .add').first().waitFor({ timeout: 20000 });
 
     /* Кошик → форма → «Оформити». Повертає номер замовлення. */
     async function placeOrder(p, { delivery = false, guest = false } = {}) {
